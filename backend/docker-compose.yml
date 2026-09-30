@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: squadping_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: squadping
+      POSTGRES_PASSWORD: squadpassword_secure_2026
+      POSTGRES_DB: squadping_db
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - squadping_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U squadping -d squadping_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: squadping_api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 8080
+      HOST: 0.0.0.0
+      DATABASE_URL: postgresql://squadping:squadpassword_secure_2026@postgres:5432/squadping_db?schema=public
+      JWT_SECRET: squadping_production_jwt_secret_change_me_before_prod_2026
+      LIVEKIT_API_KEY: devkey
+      LIVEKIT_API_SECRET: secret_must_be_at_least_32_characters_long_12345
+      LIVEKIT_URL: wss://rtc.squadping.gg
+    ports:
+      - "8080:8080"
+    networks:
+      - squadping_net
+
+  livekit:
+    image: livekit/livekit-server:latest
+    container_name: squadping_livekit
+    restart: unless-stopped
+    command: --keys devkey:secret_must_be_at_least_32_characters_long_12345
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "50000-50050:50000-50050/udp"
+    networks:
+      - squadping_net
+
+volumes:
+  pgdata:
+
+networks:
+  squadping_net:
+    driver: bridge

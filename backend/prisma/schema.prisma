@@ -1,0 +1,188 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String        @id @default(uuid()) @db.Uuid
+  username     String        @unique @db.VarChar(32)
+  displayName  String        @map("display_name") @db.VarChar(50)
+  email        String        @unique @db.VarChar(255)
+  passwordHash String        @map("password_hash") @db.VarChar(255)
+  avatarUrl    String?       @map("avatar_url") @db.VarChar(512)
+  bio          String?       @db.VarChar(200)
+  status       String        @default("offline") @db.VarChar(20) // online, idle, in_room, gaming, offline
+  currentGame  String?       @map("current_game") @db.VarChar(64)
+  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt    DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
+
+  refreshTokens  RefreshToken[]
+  ownedRooms     Room[]         @relation("RoomOwner")
+  roomMembers    RoomMember[]
+  sentRequests   FriendRequest[] @relation("SentFriendRequests")
+  recvRequests   FriendRequest[] @relation("ReceivedFriendRequests")
+  friendships    Friendship[]    @relation("UserFriendships")
+  friendOf       Friendship[]    @relation("FriendFriendships")
+  blockedBy      Block[]         @relation("BlockedUsers")
+  blocking       Block[]         @relation("UserBlocks")
+  messages       RoomMessage[]
+  reportsFiled   Report[]        @relation("Reporter")
+  reportsTarget  Report[]        @relation("ReportedUser")
+  notifications  Notification[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  tokenHash  String   @unique @map("token_hash") @db.VarChar(255)
+  deviceInfo String?  @map("device_info") @db.VarChar(255)
+  expiresAt  DateTime @map("expires_at") @db.Timestamptz()
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model FriendRequest {
+  id         String   @id @default(uuid()) @db.Uuid
+  senderId   String   @map("sender_id") @db.Uuid
+  receiverId String   @map("receiver_id") @db.Uuid
+  status     String   @default("pending") @db.VarChar(20) // pending, accepted, rejected
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt  DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
+
+  sender   User @relation("SentFriendRequests", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver User @relation("ReceivedFriendRequests", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  @@unique([senderId, receiverId])
+  @@index([receiverId, status])
+  @@index([senderId, status])
+  @@map("friend_requests")
+}
+
+model Friendship {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  friendId  String   @map("friend_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  user   User @relation("UserFriendships", fields: [userId], references: [id], onDelete: Cascade)
+  friend User @relation("FriendFriendships", fields: [friendId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, friendId])
+  @@index([userId])
+  @@index([friendId])
+  @@map("friendships")
+}
+
+model Block {
+  id        String   @id @default(uuid()) @db.Uuid
+  blockerId String   @map("blocker_id") @db.Uuid
+  blockedId String   @map("blocked_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  blocker User @relation("UserBlocks", fields: [blockerId], references: [id], onDelete: Cascade)
+  blocked User @relation("BlockedUsers", fields: [blockedId], references: [id], onDelete: Cascade)
+
+  @@unique([blockerId, blockedId])
+  @@index([blockerId])
+  @@index([blockedId])
+  @@map("blocks")
+}
+
+model Room {
+  id              String   @id @default(uuid()) @db.Uuid
+  ownerId         String   @map("owner_id") @db.Uuid
+  name            String   @db.VarChar(64)
+  description     String?  @db.VarChar(255)
+  type            String   @default("PUBLIC") @db.VarChar(20) // PUBLIC, PRIVATE
+  maxParticipants Int      @default(8) @map("max_participants") @db.SmallInt
+  isLocked        Boolean  @default(false) @map("is_locked")
+  activeGame      String?  @map("active_game") @db.VarChar(64)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
+
+  owner    User          @relation("RoomOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+  members  RoomMember[]
+  messages RoomMessage[]
+  reports  Report[]
+
+  @@index([type, isLocked, createdAt(sort: Desc)])
+  @@index([ownerId])
+  @@map("rooms")
+}
+
+model RoomMember {
+  id              String   @id @default(uuid()) @db.Uuid
+  roomId          String   @map("room_id") @db.Uuid
+  userId          String   @map("user_id") @db.Uuid
+  role            String   @default("member") @db.VarChar(20) // owner, admin, member
+  isMutedByAdmin  Boolean  @default(false) @map("is_muted_by_admin")
+  joinedAt        DateTime @default(now()) @map("joined_at") @db.Timestamptz()
+
+  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, userId])
+  @@index([roomId])
+  @@index([userId])
+  @@map("room_members")
+}
+
+model RoomMessage {
+  id          String    @id @default(uuid()) @db.Uuid
+  roomId      String    @map("room_id") @db.Uuid
+  userId      String?   @map("user_id") @db.Uuid
+  content     String    @db.Text
+  messageType String    @default("USER") @map("message_type") @db.VarChar(20) // USER, SYSTEM
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz()
+
+  room Room  @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([roomId, createdAt(sort: Desc), id(sort: Desc)])
+  @@map("room_messages")
+}
+
+model Report {
+  id           String   @id @default(uuid()) @db.Uuid
+  reporterId   String   @map("reporter_id") @db.Uuid
+  targetUserId String   @map("target_user_id") @db.Uuid
+  roomId       String?  @map("room_id") @db.Uuid
+  reason       String   @db.VarChar(50)
+  description  String?  @db.Text
+  status       String   @default("PENDING") @db.VarChar(20) // PENDING, REVIEWED, DISMISSED, ACTIONED
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  reporter   User  @relation("Reporter", fields: [reporterId], references: [id], onDelete: Cascade)
+  targetUser User  @relation("ReportedUser", fields: [targetUserId], references: [id], onDelete: Cascade)
+  room       Room? @relation(fields: [roomId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt(sort: Desc)])
+  @@map("reports")
+}
+
+model Notification {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  title     String   @db.VarChar(100)
+  body      String   @db.VarChar(255)
+  type      String   @db.VarChar(50)
+  metadata  Json?
+  isRead    Boolean  @default(false) @map("is_read")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead, createdAt(sort: Desc)])
+  @@map("notifications")
+}

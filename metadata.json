@@ -1,0 +1,6 @@
+{
+  "name": "SquadPing",
+  "description": "Lightweight gaming hangout and low-latency voice room with background game audio support",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
